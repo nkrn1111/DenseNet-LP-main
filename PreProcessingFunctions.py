@@ -1,15 +1,19 @@
 from networkx.classes.function import number_of_nodes
+
+import source
+from Gui import unknown_support, unknown
 from source import *
 from numba import jit, cuda
 import networkx as nx
 import math
 from node2vec import Node2Vec
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity,cosine_distances
+from sklearn.metrics.pairwise import cosine_similarity, cosine_distances
 import itertools as it
 import random
 from tqdm import tqdm
 import warnings
+
 
 # import sys
 # np.set_printoptions(threshold=sys.maxsize)
@@ -17,10 +21,12 @@ import warnings
 def create_node2vec_feature_vectors_to_file(graph, file_name):
     print("Create and save node2vec feature vectors into file:", file_name)
     # Precompute probabilities and generate walks - **ON WINDOWS ONLY WORKS WITH workers=1**
-    node2vec = Node2Vec(graph, dimensions=DimensionOfFeatures, walk_length=30, num_walks=200, workers=4)  # Use temp_folder for big graphs
+    node2vec = Node2Vec(graph, dimensions=DimensionOfFeatures, walk_length=30, num_walks=200,
+                        workers=4)  # Use temp_folder for big graphs
     print("Embedding please wait for the process to finish")
     # Embed nodes
-    model = node2vec.fit(window=10, min_count=1, batch_words=4)  # Any keywords acceptable by gensim.Word2Vec can be passed, `dimensions` and `workers` are automatically passed (from the Node2Vec constructor)
+    model = node2vec.fit(window=10, min_count=1,
+                         batch_words=4)  # Any keywords acceptable by gensim.Word2Vec can be passed, `dimensions` and `workers` are automatically passed (from the Node2Vec constructor)
 
     # Save embeddings for later use
     model.wv.save_word2vec_format(file_name)
@@ -114,7 +120,6 @@ def cosine_distance_similarity(matrix, feature_vector):
 
 # return the index from the list of tuples that has cosine distane and node number as a tuple
 def list_index(similarity_list, matrix_index):
-    
     index = 0
     for list_tuple in similarity_list:
         if list_tuple[1] == matrix_index:
@@ -139,7 +144,7 @@ def sorted_similarity_vectors(similarity_list, subGraph_feature_matrix):
 # create a list of node pairs for example [(node_number1, node_number2),(node_number3, node_number4)]
 def generate_node_combinations(num_of_nodes):
     print("Generate node combiantions")
-    nodes=list(range(0, num_of_nodes))
+    nodes = list(range(0, num_of_nodes))
     return list(it.combinations(nodes, 2))
 
 
@@ -162,7 +167,8 @@ def create_all_node_pair_feature_matrices(feature_matrix, node_combination_list,
     print("Create all node pair feature matrices")
     node_pair_feature_matrices = np.zeros((num_of_node_pairs, 2, K, DimensionOfFeatures))
     for i in range(num_of_node_pairs):
-        node_pair_feature_matrices[i] = create_node_pair_features_matrix(node_combination_list[i], feature_matrix, dictionary)
+        node_pair_feature_matrices[i] = create_node_pair_features_matrix(node_combination_list[i], feature_matrix,
+                                                                         dictionary)
     return node_pair_feature_matrices
 
 
@@ -186,18 +192,18 @@ def calcMultiGpu(matrix, num_of_node_pairs):
     for i in range(num_of_node_pairs):
         for l in range(K):
             for p in range(DimensionOfFeatures):
-                matrix[i][2][l][p] = (matrix[i][0][l][p] + matrix[i][1][l][p])/2.0
-    
+                matrix[i][2][l][p] = (matrix[i][0][l][p] + matrix[i][1][l][p]) / 2.0
+
 
 # this function creates a 4 dimensional matrix for all node paris (after recreating them as picture like) size of: (num_of_node_pairs x 3 x K x K)
 def convert_all_node_pairs_into_picture_data(feature_matrix, node_combination_list, dictionary, num_of_node_pairs):
     print("Convert all node pairs into picture data")
-    node_pair_feature_matrices = np.zeros((num_of_node_pairs, 3, K, DimensionOfFeatures))
-    
+    node_pair_feature_matrices = np.zeros((int(num_of_node_pairs), 3, K, DimensionOfFeatures))
     for i in tqdm(range(num_of_node_pairs)):
-        node_pair_feature_matrices[i] = convert_node_pair_into_picture_data(node_combination_list[i], feature_matrix, dictionary)
-        
-    print("Compute 3rd channel (average of first 2 channels)  for all the node-pairs feature matrix (CNN expects pictures with 3 channels as input)")
+        node_pair_feature_matrices[i] = convert_node_pair_into_picture_data(node_combination_list[i], feature_matrix,dictionary)
+        unknown.update_progress_bar(num_of_node_pairs * 2,0)
+    print(
+        "Compute 3rd channel (average of first 2 channels)  for all the node-pairs feature matrix (CNN expects pictures with 3 channels as input)")
     print("Parallel computation using cuda cores beggining please wait...")
     threadsperblock = (16, 16)
     blockspergrid_x = math.ceil(K / threadsperblock[0])
@@ -207,7 +213,7 @@ def convert_all_node_pairs_into_picture_data(feature_matrix, node_combination_li
         warnings.simplefilter("ignore")
         calcMultiGpu[blockspergrid, threadsperblock](node_pair_feature_matrices, num_of_node_pairs)
     print("Parallel computation Done!")
-    
+
     return node_pair_feature_matrices
 
 
@@ -219,7 +225,7 @@ def create_pair_labels(node_combination_list, graph):
     label_array = np.zeros(len(node_combination_list), dtype=int)
     index = 0
     for nodePair in node_combination_list:
-        if graph.has_edge(nodePair[0],nodePair[1]):
+        if graph.has_edge(nodePair[0], nodePair[1]):
             label_array[index] = 1
         index = index + 1
     return label_array
@@ -237,26 +243,28 @@ def load_data_from_file(training_file_name):
 def remove_percentage_of_edges_from_graph(graph, percentage_to_remove):
     print("Remove percentage of edges from graph")
     graph_to_return = graph
-    removed_edges = random.sample(graph.edges(),k=int(percentage_to_remove*graph.number_of_edges()))
+    removed_edges = random.sample(graph.edges(), k=int(percentage_to_remove * graph.number_of_edges()))
     graph_to_return.remove_edges_from(removed_edges)
     return graph_to_return, removed_edges
+
 
 def percentage_of_complemant_graph_edges(graph):
     complemant_graph = nx.complement(graph)
     negative_class = complemant_graph.edges()
-    negative_class_edges = random.sample( negative_class, k=int( (percentage_of_negative_class_additions * graph.number_of_edges()) - (percentage_of_edges_to_remove * graph.number_of_edges()) ) )
+    negative_class_edges = random.sample(negative_class, k=int(
+        (percentage_of_negative_class_additions * graph.number_of_edges()) - (
+                percentage_of_edges_to_remove * graph.number_of_edges())))
 
     return negative_class_edges
 
 
-
-def create_data_set_to_file(graph, node2vec_feature_vector_file_name, node_combination_list, data_set_file_name, dictionary, num_of_nodes):
+def create_data_set_to_file(graph, node2vec_feature_vector_file_name, node_combination_list, data_set_file_name,
+                            dictionary, num_of_nodes):
     print("Create data set to file:", data_set_file_name)
-    num_of_node_pairs = int((num_of_nodes*(num_of_nodes - 1))/2)
+    num_of_node_pairs = int((num_of_nodes * (num_of_nodes - 1)) / 2)
     create_node2vec_feature_vectors_to_file(graph, node2vec_feature_vector_file_name)
-    #create feature matrix for all the nodes in the graph
+    # create feature matrix for all the nodes in the graph
     node_pair_feature_matrix = txt_file_to_matrix(node2vec_feature_vector_file_name, num_of_nodes)
-    all_node_pairs_feature_matrix = convert_all_node_pairs_into_picture_data(node_pair_feature_matrix, node_combination_list, dictionary, num_of_node_pairs)
+    all_node_pairs_feature_matrix = convert_all_node_pairs_into_picture_data(node_pair_feature_matrix,node_combination_list, dictionary,num_of_node_pairs)
     save_data_into_file(data_set_file_name, all_node_pairs_feature_matrix)
-
-
+    unknown.update_progress_bar(num_of_node_pairs * 2, 1)
