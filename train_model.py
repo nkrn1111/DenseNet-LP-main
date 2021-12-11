@@ -273,7 +273,6 @@ def start_training(depth=100, growth_rate=12, efficient=True,
         efficient=efficient,
     )
     print(model)
-    
     # Print number of parameters
     num_params = sum(p.numel() for p in model.parameters())
     print("Total parameters: ", num_params)
