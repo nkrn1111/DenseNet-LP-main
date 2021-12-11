@@ -35,10 +35,8 @@ setup(
         'Topic :: Utilities',
         ],
     install_requires=[
-        'Pillow>=5.3.0',
         'pandas>=0.23.3',
         'numpy>=1.21.4',
-        'scikit-learn>=0.20.0',
         'scipy>=1.1.0',
         'PyTorch>=1.0',
         'networks>=0.3.7',
